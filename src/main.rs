@@ -7,11 +7,11 @@ mod commands;
 
 use std::net::{TcpListener};
 use std::thread;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc};
 use server::*;
 
 fn main() {
-    let server = Server::new(server::DEFAULT_CONFIG_FILE).unwrap();
+    let server = ArkServer::new(server::DEFAULT_CONFIG_FILE).unwrap();
     // Ahhhhh
     // doing this to unlock the server struct and then drop the unlock
     let bind_addr = format!("{}:{}", 

@@ -31,10 +31,21 @@ impl error::Error for CommandError {
 }
 
 pub fn process_command(client: &mut Client, buffer: String) -> () {
-    let split_cmd: Vec<&str> = buffer.split_whitespace().collect();
+    let upper = buffer.to_uppercase();
+    let split_cmd: Vec<&str> = upper.split_whitespace().collect();
     if split_cmd.len() < 1 {
-        client.write_response(CRLF)
+        client.write_response(ARK_CRLF);
+    } else {
+        match split_cmd[0] {
+            "PING" => ping_command(client, split_cmd),
+            "QUIT" => quit_command(client, split_cmd),
+            "CONFIG" => config_command(client, split_cmd),
+            _ => client.write_response(
+                &format!("{}{}", ARK_ERR, "Unkown command")
+            ),
+        }
     }
+
 }
 
 // We disregard args here
@@ -43,25 +54,27 @@ pub fn ping_command(client: &mut Client, _args: Vec<&str>) -> () {
 }
 
 // We disregard args here
-pub fn quit_command(_client: &mut Client, _args: Vec<&str>) -> () {
+pub fn quit_command(client: &mut Client, _args: Vec<&str>) -> () {
     //client.tear_down();
 }
 
 pub fn config_command(client: &mut Client, args: Vec<&str>) -> () {
-    match args.get(0) {
-        Some(&"get") => config_get_command(client, args[0]),
-        Some(&"set") => config_set_command(client, args[1..].to_vec()),
-        Some(arg) => client.write_response(format!("Unknown arg {}", arg).as_str()),
-        None => client.write_response(format!("CONFIG requires arg GET|SET...").as_str()),
+    let resp = match args.get(1) {
+        Some(&"GET") => config_get_command(client, args[2]),
+        Some(&"SET") => config_set_command(client, args[2..].to_vec()),
+        Some(arg) => format!("Unknown arg {}", arg),
+        None => format!("CONFIG requires arg GET|SET..."),
+    };
+    client.write_response(&resp);
+}
+
+fn config_get_command(client: &Client, key: &str) -> String {
+    get_server_config(&client.server, key)
+}
+
+fn config_set_command(client: &mut Client, args: Vec<&str>) -> String {
+    match set_server_config(&mut client.server, args[0], args[1..].to_vec()) {
+        Ok(()) => return String::from(ARK_OK),
+        Err(err) => return format!("{} {}", ARK_ERR, err),
     }
-}
-
-fn config_get_command(client: &mut Client, key: &str) -> () {
-    client.write_response(
-        get_server_config(&client.server, key)
-    );
-}
-
-fn config_set_command(client: &mut Client, args: Vec<&str>) -> () {
-    client.write_response(format!("set {:?}", args).as_str());
 }

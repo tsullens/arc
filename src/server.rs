@@ -5,11 +5,11 @@ use rand::prelude::*;
 use std::fs::File;
 use std::sync::{Arc, RwLock};
 use std::fmt;
-use super::commands;
+use super::commands::*;
 
-pub const CRLF: &str = "\r\n";
-pub const OK: &str = "+OK\r\n";
-pub const ERR: &str = "-ERR\r\n";
+pub const ARK_CRLF: &str = "\r\n";
+pub const ARK_OK: &str = "+OK\r\n";
+pub const ARK_ERR: &str = "-ERR\r\n";
 
 pub const DEFAULT_CONFIG_FILE: &str = "./settings.conf";
 const DEFAULT_ADDRESS_VAL: &str = "127.0.0.1";
@@ -17,23 +17,23 @@ const DEFAULT_PORT_VAL: &str = "7878";
 const DEFAULT_SYNCWRITE_VAL: u8 = 1;
 
 lazy_static! {
-    static ref confMutKeys: Vec<&'static str> = vec![
+    static ref CONF_MUT_KEYS: Vec<&'static str> = vec![
         "syncwrite",
     ];
 
-    static ref confKeys: Vec<&'static str> = {
+    static ref CONF_KEYS: Vec<&'static str> = {
         let mut v = vec![
             "address",
             "port",
             "debug",
         ];
-        v.extend_from_slice(&confMutKeys);
+        v.extend_from_slice(&CONF_MUT_KEYS);
         v
     };
 }
 
-pub struct Client<'a, 'b: 'a> {
-    pub server: Arc<RwLock<Server<'b>>>,
+pub struct Client<'a> {
+    pub server: Arc<RwLock<ArkServer>>,
     stream_reader: BufReader<&'a TcpStream>,
     stream_writer: BufWriter<&'a TcpStream>,
     id: u32,
@@ -41,9 +41,9 @@ pub struct Client<'a, 'b: 'a> {
     local_addr: SocketAddr,
 }
 
-impl<'a, 'b> Client<'a, 'b> {
+impl<'a> Client<'a> {
     
-    pub fn new(stream: &'b TcpStream, server: Arc<RwLock<Server<'b>>>) -> Result<Client<'a, 'b>, Box<error::Error>> {
+    pub fn new(stream: &'a TcpStream, server: Arc<RwLock<ArkServer>>) -> Result<Client<'a>, Box<error::Error>> {
         let raddr = stream.peer_addr()?;
         let laddr = stream.local_addr()?;
         let mut rng = thread_rng();
@@ -73,7 +73,7 @@ impl<'a, 'b> Client<'a, 'b> {
                 }
             };
             
-           commands::process_command(&mut self, input);
+           process_command(&mut self, input);
         }
     }
 
@@ -122,27 +122,27 @@ impl error::Error for ConfigError {
 }
 
 #[derive(Debug)]
-pub struct Server<'a> {
-    address: &'a str,
-    port: &'a str,
+pub struct ArkServer {
+    address: String,
+    port: String,
     isloaded: bool,
     debug: bool,
-    policy: u8,
+    cache_write_through: u8,
 }
 
-impl<'a> Server<'a> {
-    pub fn new(conff: &str) -> Result<Arc<RwLock<Server<'a>>>, ConfigError> {
-        let server = Arc::new(
+impl ArkServer {
+    pub fn new(conf_f: &str) -> Result<Arc<RwLock<ArkServer>>, ConfigError> {
+        let mut server = Arc::new(
                 RwLock::new(
-                    Server {
-                        address: DEFAULT_ADDRESS_VAL,
-                        port: DEFAULT_PORT_VAL,
+                    ArkServer {
+                        address: String::from(DEFAULT_ADDRESS_VAL),
+                        port: String::from(DEFAULT_PORT_VAL),
                         isloaded: false,
                         debug: true,
-                        policy: DEFAULT_SYNCWRITE_VAL,
+                        cache_write_through: DEFAULT_SYNCWRITE_VAL,
                     }));  
         
-        match processConfFile(&server, conff) {
+        match processConfFile(&mut server, conf_f) {
             Ok(()) => {
                 return Ok(server);
             },
@@ -151,7 +151,7 @@ impl<'a> Server<'a> {
     }
 }
 
-fn processConfFile<'a>(server: &Arc<RwLock<Server<'a>>>, conff: &str) -> Result<(), ConfigError> {
+fn processConfFile(mut server: &mut Arc<RwLock<ArkServer>>, conff: &str) -> Result<(), ConfigError> {
     let mut f = File::open(conff).expect("Configuration file not found or cannot be opened.");
     let mut contents = String::new();
     f.read_to_string(&mut contents);
@@ -172,27 +172,24 @@ fn processConfFile<'a>(server: &Arc<RwLock<Server<'a>>>, conff: &str) -> Result<
 }
 
 // directive is the entire `key val [val..]`
-pub fn set_server_config<'a>(server: &mut Arc<RwLock<Server<'a>>>, key: &str, args: Vec<&'static str>) -> Result<(), ConfigError> {
-    let s = &server.write().unwrap();
-    match key.to_lowercase().as_str() {
-        "address" => s.address = args[0],
-        "port" => s.port = args[0],
-        "policy" => match args[0] {
-            "write_through" => s.policy = 0,
-            "write_back" => s.policy = 1,
-            _ => return Err(ConfigError),
-        },
+pub fn set_server_config(server: &mut Arc<RwLock<ArkServer>>, key: &str, args: Vec<&str>) -> Result<(), ConfigError> {
+    let mut s = server.write().unwrap();
+    match key.to_uppercase().as_str() {
+        "ADDRESS" => s.address = String::from(args[0]),
+        "PORT" => s.port = String::from(args[0]),
+        "CACHE_WRITE_THROUGH" => s.cache_write_through = args[0].parse::<u8>().unwrap(),
         _ => return Err(ConfigError),
     };
     Ok(())
 }
 
-pub fn get_server_config<'a>(server: &Arc<RwLock<Server<'a>>>, key: &str) -> &'a str {
+pub fn get_server_config(server: &Arc<RwLock<ArkServer>>, key: &str) -> String {
     let s = server.read().unwrap();
 
-    return match key.to_lowercase().as_str() {
-        "address" => s.address,
-        "port" => s.port,
-        _ => "UNKNOWN",
+    return match key.to_uppercase().as_str() {
+        "ADDRESS" => String::clone(&s.address),
+        "PORT" => String::clone(&s.port),
+        "CACHE_WRITE_THROUGH" => s.cache_write_through.to_string(),
+        _ => String::from("UNKNOWN"),
     };
 }
