@@ -49,16 +49,17 @@ pub fn quit_command(_client: &mut Client, _args: Vec<&str>) -> () {
 
 pub fn config_command(client: &mut Client, args: Vec<&str>) -> () {
     match args.get(0) {
-        Some(&"get") => config_get_command(client, args[1..].to_vec()),
+        Some(&"get") => config_get_command(client, args[0]),
         Some(&"set") => config_set_command(client, args[1..].to_vec()),
         Some(arg) => client.write_response(format!("Unknown arg {}", arg).as_str()),
         None => client.write_response(format!("CONFIG requires arg GET|SET...").as_str()),
     }
 }
 
-fn config_get_command(client: &mut Client, args: Vec<&str>) -> () {
-    let s = client.server.read().unwrap();
-    client.write_response(s.get_key(args[0]));
+fn config_get_command(client: &mut Client, key: &str) -> () {
+    client.write_response(
+        get_server_config(&client.server, key)
+    );
 }
 
 fn config_set_command(client: &mut Client, args: Vec<&str>) -> () {
