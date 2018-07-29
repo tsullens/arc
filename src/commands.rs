@@ -5,7 +5,7 @@ use super::server::*;
 pub struct Command<'a, 'b> {
     name: &'a str,
     arity: u32,
-    commandProc: fn(&'b Client, Vec<&str>) -> (),
+    command_proc: fn(&'b Client, Vec<&str>) -> (),
 }
 
 pub struct Commands<'a, 'b>(Vec<Command<'a, 'b>>);

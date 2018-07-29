@@ -88,7 +88,7 @@ impl<'a> Client<'a> {
 
     pub fn write_response(&mut self, response: &str) -> () {
         println!("Sending response `{}`: cid|{}", response, self.id);
-        let formatted_response = format!("{}\r\n", response);
+        let formatted_response = format!("{}{}", response, ARK_CRLF);
 
         // TODO: add exception handling
         self.stream_writer
@@ -142,7 +142,7 @@ impl ArkServer {
                         cache_write_through: DEFAULT_SYNCWRITE_VAL,
                     }));  
         
-        match processConfFile(&mut server, conf_f) {
+        match process_config_file(&mut server, conf_f) {
             Ok(()) => {
                 return Ok(server);
             },
@@ -151,7 +151,7 @@ impl ArkServer {
     }
 }
 
-fn processConfFile(mut server: &mut Arc<RwLock<ArkServer>>, conff: &str) -> Result<(), ConfigError> {
+fn process_config_file(mut server: &mut Arc<RwLock<ArkServer>>, conff: &str) -> Result<(), ConfigError> {
     let mut f = File::open(conff).expect("Configuration file not found or cannot be opened.");
     let mut contents = String::new();
     f.read_to_string(&mut contents);
