@@ -94,17 +94,16 @@ impl<'a> Client<'a> {
     }
 
     pub fn write_response(&mut self, response: ClientResponse) -> () {
-        println!("Sending response `{}`: cid|{}", response, self.id);
+        println!("Sending (unformatted) response `{} {}`: cid|{}",
+                &response.code,
+                &response.message,
+                self.id
+        );
         let formatted_response = format!("{}", response);
 
         // TODO: add exception handling
-        self.stream_writer
-            .write(
-                formatted_response.as_bytes()
-            ).unwrap();
-        self.stream_writer
-            .flush()
-            .unwrap();
+        self.stream_writer.write(formatted_response.as_bytes()).unwrap();
+        self.stream_writer.flush().unwrap();
     }
 }
 
