@@ -15,8 +15,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "ark"
-version = "0.1.0"
+name = "arc"
+version = "0.0.1"
 dependencies = [
  "config 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",

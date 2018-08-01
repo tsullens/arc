@@ -1,6 +1,6 @@
 [package]
-name = "ark"
-version = "0.1.0"
+name = "arc"
+version = "0.0.1"
 authors = ["Tyler Sullens <tsullens@mix.wvu.edu>"]
 
 [dependencies]

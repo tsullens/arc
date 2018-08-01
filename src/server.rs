@@ -1,39 +1,29 @@
-use std::net::{TcpStream, SocketAddr, Shutdown};
-use std::io::{Read, BufRead, Write, BufReader, BufWriter};
+use std::net::{TcpListener, TcpStream, SocketAddr, Shutdown};
+use std::io::{BufRead, Write, BufReader, BufWriter};
+use std::thread;
 use std::error;
 use rand::prelude::*;
-use std::fs::File;
 use std::sync::{Arc, RwLock};
 use std::fmt;
 use super::commands::*;
+use super::config::*;
 
-pub const ARK_CRLF: &str = "\r\n";
-pub const ARK_OK: &str = "+OK\r\n";
-pub const ARK_ERR: &str = "-ERR\r\n";
+pub const ARC_CRLF: &'static str = "\r\n";
+pub const ARC_OK: &'static str = "+OK";
+pub const ARC_ERR: &'static str = "-ERR";
 
-pub const DEFAULT_CONFIG_FILE: &str = "./settings.conf";
-const DEFAULT_ADDRESS_VAL: &str = "127.0.0.1";
-const DEFAULT_PORT_VAL: &str = "7878";
-const DEFAULT_SYNCWRITE_VAL: u8 = 1;
+pub struct ClientResponse {
+    pub code: &'static str,
+    pub message: String,
+}
 
-lazy_static! {
-    static ref CONF_MUT_KEYS: Vec<&'static str> = vec![
-        "syncwrite",
-    ];
-
-    static ref CONF_KEYS: Vec<&'static str> = {
-        let mut v = vec![
-            "address",
-            "port",
-            "debug",
-        ];
-        v.extend_from_slice(&CONF_MUT_KEYS);
-        v
-    };
+impl fmt::Display for ClientResponse {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}{}{}{}", self.code, ARC_CRLF, &self.message, ARC_CRLF)
+    }
 }
 
 pub struct Client<'a> {
-    pub server: Arc<RwLock<ArkServer>>,
     stream_reader: BufReader<&'a TcpStream>,
     stream_writer: BufWriter<&'a TcpStream>,
     id: u32,
@@ -43,13 +33,12 @@ pub struct Client<'a> {
 
 impl<'a> Client<'a> {
     
-    pub fn new(stream: &'a TcpStream, server: Arc<RwLock<ArkServer>>) -> Result<Client<'a>, Box<error::Error>> {
+    pub fn new(stream: &'a TcpStream) -> Result<Self, Box<error::Error>> {
         let raddr = stream.peer_addr()?;
         let laddr = stream.local_addr()?;
         let mut rng = thread_rng();
         
         let c = Client {
-            server: server,
             stream_reader: BufReader::new(&stream),
             stream_writer: BufWriter::new(&stream),
             id: rng.gen::<u32>(),
@@ -59,26 +48,44 @@ impl<'a> Client<'a> {
         Ok(c)
     }
 
-    pub fn handle_connection(mut self) {
+    pub fn handle_connection(mut self, server: Arc<RwLock<ArcServer>>) {
         println!("New connection with client id {} from {} -> {}", self.id, self.remote_addr, self.local_addr);
         loop {
             let mut input = String::new();
-            match self.stream_reader.read_line(&mut input) {
+            let resp = match self.stream_reader.read_line(&mut input) {
                 Ok(_) => {
-                    println!("Received command {}: cid|{}", input.trim(), self.id);
+                    input = input.to_lowercase();
+                    input = input.trim().to_string();
+                    println!("Received command {}: cid|{}", input, self.id);
+
+                    // This is handled as a special case
+                    if input == "quit" {
+                        break;
+                    }
+                    
+                    let command: Vec<&str> = input.split_whitespace().collect();
+                    process_command(&server, command)
                 },
                 Err(_) => {
-                    self.write_response("Invalid input");
+                    self.write_response(ClientResponse {
+                        code: ARC_ERR,
+                        message: "invalid input".to_string(),
+                    });
                     continue
                 }
             };
             
-           process_command(&mut self, input);
+            self.write_response(resp);
         }
+        self.tear_down();
     }
 
-    pub fn tear_down(mut self) -> () {
-        self.write_response("bye!");
+    fn tear_down(mut self) -> () {
+        self.write_response(ClientResponse {
+            code: ARC_OK,
+            message: "disconnecting. bye!".to_string(),
+        });
+
         let stream = self.stream_reader.into_inner();
         match stream.shutdown(Shutdown::Both) {
             Err(err) => println!("Error shutting down client {}: {}", self.id, err),
@@ -86,9 +93,9 @@ impl<'a> Client<'a> {
         }
     }
 
-    pub fn write_response(&mut self, response: &str) -> () {
+    pub fn write_response(&mut self, response: ClientResponse) -> () {
         println!("Sending response `{}`: cid|{}", response, self.id);
-        let formatted_response = format!("{}{}", response, ARK_CRLF);
+        let formatted_response = format!("{}", response);
 
         // TODO: add exception handling
         self.stream_writer
@@ -122,74 +129,50 @@ impl error::Error for ConfigError {
 }
 
 #[derive(Debug)]
-pub struct ArkServer {
-    address: String,
-    port: String,
-    isloaded: bool,
-    debug: bool,
-    cache_write_through: u8,
+pub struct ArcServer {
+    pub config: Config,
+    pub isloaded: bool,
 }
 
-impl ArkServer {
-    pub fn new(conf_f: &str) -> Result<Arc<RwLock<ArkServer>>, ConfigError> {
-        let mut server = Arc::new(
+impl ArcServer {
+    pub fn new(config: Config) -> Arc<RwLock<ArcServer>> {
+        let server = Arc::new(
                 RwLock::new(
-                    ArkServer {
-                        address: String::from(DEFAULT_ADDRESS_VAL),
-                        port: String::from(DEFAULT_PORT_VAL),
+                    ArcServer {
+                        config: config,
                         isloaded: false,
-                        debug: true,
-                        cache_write_through: DEFAULT_SYNCWRITE_VAL,
-                    }));  
-        
-        match process_config_file(&mut server, conf_f) {
-            Ok(()) => {
-                return Ok(server);
+                    }));
+
+        return server;
+    }
+}
+
+pub fn start_and_run() {
+    let config = Config::init(None);
+    let tcp_listener = &[
+            &config.get("bind_address").unwrap(),
+            ":",
+            &config.get("port").unwrap()
+        ].join("");
+
+    let arc_server = ArcServer::new(config);
+
+    let tcp_server = TcpListener::bind(tcp_listener).unwrap();
+
+    println!("Successfully listening on {}", tcp_listener);
+
+    for connection in tcp_server.incoming() {
+        match connection {
+            Ok(stream) => {
+                let arc_server_clone = Arc::clone(&arc_server);
+                thread::spawn(move|| {
+                    match Client::new(&stream) {
+                        Ok(conn) => conn.handle_connection(arc_server_clone),
+                        Err(err) => println!("Failed to set up connection: {}", err),
+                    };
+                });
             },
-            Err(err) => Err(err),
+            Err(err) => println!("Error unwrapping connection: {}", err),
         }
     }
-}
-
-fn process_config_file(mut server: &mut Arc<RwLock<ArkServer>>, conff: &str) -> Result<(), ConfigError> {
-    let mut f = File::open(conff).expect("Configuration file not found or cannot be opened.");
-    let mut contents = String::new();
-    f.read_to_string(&mut contents);
-
-    for (_line_num, line) in contents.lines().enumerate() {
-        let line = line.trim().to_uppercase();
-
-        if line.starts_with("#") {
-            continue
-        }
-        let args: Vec<&str> = line.split_whitespace().collect();
-        match set_server_config(&mut server, &args[0], args[1..].to_vec()) {
-            Ok(()) => continue,
-            Err(err) => return Err(err),
-        }
-    }
-    Ok(())
-}
-
-// directive is the entire `key val [val..]`
-pub fn set_server_config(server: &mut Arc<RwLock<ArkServer>>, key: &str, args: Vec<&str>) -> Result<(), ConfigError> {
-    let mut s = server.write().unwrap();
-    match key.to_uppercase().as_str() {
-        "ADDRESS" => s.address = String::from(args[0]),
-        "PORT" => s.port = String::from(args[0]),
-        "CACHE_WRITE_THROUGH" => s.cache_write_through = args[0].parse::<u8>().unwrap(),
-        _ => return Err(ConfigError),
-    };
-    Ok(())
-}
-
-pub fn get_server_config(server: &Arc<RwLock<ArkServer>>, key: &str) -> String {
-    let s = server.read().unwrap();
-
-    return match key.to_uppercase().as_str() {
-        "ADDRESS" => String::clone(&s.address),
-        "PORT" => String::clone(&s.port),
-        "CACHE_WRITE_THROUGH" => s.cache_write_through.to_string(),
-        _ => String::from("UNKNOWN"),
-    };
 }

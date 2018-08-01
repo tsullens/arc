@@ -1,3 +1,3 @@
 *TODO
 - Add logging
-- ClientConnection write_error_response method?
+- Standardize around to_lowercase or to_uppercase when parsing
