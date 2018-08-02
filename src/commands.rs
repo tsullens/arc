@@ -1,6 +1,6 @@
 use std::fmt;
 use std::error;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc};
 use super::server::*;
 
 pub struct Command<'a, 'b> {
@@ -31,7 +31,7 @@ impl error::Error for CommandError {
     }
 }
 
-pub fn process_command<'a>(server: &'a Arc<RwLock<ArcServer>>, input: Vec<&str>) -> ClientResponse {
+pub fn process_command<'a>(server: &'a Arc<ArcServer>, input: Vec<&str>) -> ClientResponse {
 
     let cresp = match input[0] {
         "ping" => ping_command(),
@@ -52,7 +52,7 @@ pub fn ping_command() -> ClientResponse{
     }
 }
 
-pub fn config_command<'a>(server: &'a Arc<RwLock<ArcServer>>, args: Vec<&str>) -> ClientResponse {
+pub fn config_command<'a>(server: &'a Arc<ArcServer>, args: Vec<&str>) -> ClientResponse {
     match args.get(1) {
         Some(&"get") => config_get_command(server, args[2]),
         Some(arg) => ClientResponse {
@@ -66,9 +66,8 @@ pub fn config_command<'a>(server: &'a Arc<RwLock<ArcServer>>, args: Vec<&str>) -
     }
 }
 
-fn config_get_command<'a>(server: &'a Arc<RwLock<ArcServer>>, key: &str) -> ClientResponse {
-    let handle = server.read().unwrap();
-    let resp = match handle.config.get(key) {
+fn config_get_command<'a>(server: &'a Arc<ArcServer>, key: &str) -> ClientResponse {;
+    let resp = match server.config.get(key) {
         Some(val) => ClientResponse {
             code: ARC_OK,
             message: val,

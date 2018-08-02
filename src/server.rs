@@ -3,10 +3,11 @@ use std::io::{BufRead, Write, BufReader, BufWriter};
 use std::thread;
 use std::error;
 use rand::prelude::*;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc};
 use std::fmt;
 use super::commands::*;
 use super::config::*;
+use super::database::*;
 
 pub const ARC_CRLF: &'static str = "\r\n";
 pub const ARC_OK: &'static str = "+OK";
@@ -48,7 +49,7 @@ impl<'a> Client<'a> {
         Ok(c)
     }
 
-    pub fn handle_connection(mut self, server: Arc<RwLock<ArcServer>>) {
+    pub fn handle_connection(mut self, server: Arc<ArcServer>) {
         println!("New connection with client id {} from {} -> {}", self.id, self.remote_addr, self.local_addr);
         loop {
             let mut input = String::new();
@@ -131,47 +132,51 @@ impl error::Error for ConfigError {
 pub struct ArcServer {
     pub config: Config,
     pub isloaded: bool,
+    pub db: Database,
 }
 
 impl ArcServer {
-    pub fn new(config: Config) -> Arc<RwLock<ArcServer>> {
-        let server = Arc::new(
-                RwLock::new(
-                    ArcServer {
-                        config: config,
-                        isloaded: false,
-                    }));
-
-        return server;
+    pub fn new(config: Config, database: Database) -> Arc<Self> {
+        Arc::new(
+            ArcServer {
+                config: config,
+                isloaded: false,
+                db: database,
+            }
+        )
     }
 }
 
 pub fn start_and_run() {
     let config = Config::init(None);
+    let db = Database::init();
+
     let tcp_listener = &[
             &config.get("bind_address").unwrap(),
             ":",
             &config.get("port").unwrap()
         ].join("");
+    {
+        let arc_server = ArcServer::new(config, db);
 
-    let arc_server = ArcServer::new(config);
+        let tcp_server = TcpListener::bind(tcp_listener).unwrap();
 
-    let tcp_server = TcpListener::bind(tcp_listener).unwrap();
+        println!("Successfully listening on {}", tcp_listener);
 
-    println!("Successfully listening on {}", tcp_listener);
-
-    for connection in tcp_server.incoming() {
-        match connection {
-            Ok(stream) => {
-                let arc_server_clone = Arc::clone(&arc_server);
-                thread::spawn(move|| {
-                    match Client::new(&stream) {
-                        Ok(conn) => conn.handle_connection(arc_server_clone),
-                        Err(err) => println!("Failed to set up connection: {}", err),
-                    };
-                });
-            },
-            Err(err) => println!("Error unwrapping connection: {}", err),
+        for connection in tcp_server.incoming() {
+            match connection {
+                Ok(stream) => {
+                    let arc_server_clone = Arc::clone(&arc_server);
+                    thread::spawn(move|| {
+                        match Client::new(&stream) {
+                            Ok(conn) => conn.handle_connection(arc_server_clone),
+                            Err(err) => println!("Failed to set up connection: {}", err),
+                        };
+                    });
+                },
+                Err(err) => println!("Error unwrapping connection: {}", err),
+            }
         }
-    }
+
+    };
 }

@@ -17,7 +17,7 @@ pub struct Config {
 
 impl Config {
     
-    pub fn init(conf_file: Option<&str>) -> Config {
+    pub fn init(conf_file: Option<&str>) -> Self {
         let file_name = conf_file.unwrap_or_else(|| DEFAULT_CONFIG_FILE);
         let file = File::open(file_name).expect("Configuration file not found or cannot be opened.");
         let mut buf_reader = BufReader::new(file);

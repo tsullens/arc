@@ -4,6 +4,7 @@ extern crate regex;
 mod server;
 mod commands;
 mod config;
+mod database;
 
 
 fn main() {
