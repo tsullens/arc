@@ -53,7 +53,7 @@ impl<'a> Client<'a> {
         println!("New connection with client id {} from {} -> {}", self.id, self.remote_addr, self.local_addr);
         loop {
             let mut input = String::new();
-            let resp = match self.stream_reader.read_line(&mut input) {
+            let c_resp: ClientResponse = match self.stream_reader.read_line(&mut input) {
                 Ok(_) => {
                     input = input.to_lowercase();
                     input = input.trim().to_string();
@@ -63,20 +63,25 @@ impl<'a> Client<'a> {
                     if input == "quit" {
                         break;
                     }
-                    
-                    let command: Vec<&str> = input.split_whitespace().collect();
-                    process_command(&server, command)
-                },
-                Err(_) => {
-                    self.write_response(ClientResponse {
-                        code: ARC_ERR,
-                        message: "invalid input".to_string(),
-                    });
-                    continue
-                }
+
+                    /*
+                     * To-Do:
+                     * Think about this more
+                     */
+                    match process_command(&server, &input) {
+                        Ok(resp) => resp,
+                        Err(err) => ClientResponse {
+                            code: ARC_ERR,
+                            message: err.to_string(),
+                        }
+                    }
+                },  
+                Err(_) => ClientResponse {
+                            code: ARC_ERR,
+                            message: "invalid input".to_string(),
+                        }
             };
-            
-            self.write_response(resp);
+            self.write_response(c_resp);
         }
         self.tear_down();
     }
