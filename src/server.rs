@@ -3,24 +3,38 @@ use std::io::{BufRead, Write, BufReader, BufWriter};
 use std::thread;
 use std::error;
 use rand::prelude::*;
-use std::sync::{Arc};
+use std::sync::{Arc, RwLock};
 use std::fmt;
 use super::commands::*;
 use super::config::*;
 use super::database::*;
 
 pub const ARC_CRLF: &'static str = "\r\n";
+pub const ARC_NL: &'static str = "\n";
 pub const ARC_OK: &'static str = "+OK";
 pub const ARC_ERR: &'static str = "-ERR";
 
-pub struct ClientResponse {
-    pub code: &'static str,
-    pub message: String,
+#[derive(Debug)]
+pub enum ClientResponse {
+    Ok(String),
+    Err(String),
 }
 
 impl fmt::Display for ClientResponse {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}{}{}{}", self.code, ARC_CRLF, &self.message, ARC_CRLF)
+        match self {
+            ClientResponse::Ok(m) => {
+                // We have empty messages e.g. for `set` commands
+                // this prevents an extra blank line from being sent in the response
+                if m.is_empty() {
+                    write!(f, "{}", ARC_OK)
+                } else {
+                    write!(f, "{}{}{}", ARC_OK, ARC_CRLF, m)
+                }
+            },
+            // Should always provide an error message
+            ClientResponse::Err(m) => write!(f, "{}{}{}", ARC_ERR, ARC_CRLF, m),
+        }
     }
 }
 
@@ -49,7 +63,7 @@ impl<'a> Client<'a> {
         Ok(c)
     }
 
-    pub fn handle_connection(mut self, server: Arc<ArcServer>) {
+    pub fn handle_connection(mut self, server: &mut Arc<ArcServer>) {
         println!("New connection with client id {} from {} -> {}", self.id, self.remote_addr, self.local_addr);
         loop {
             let mut input = String::new();
@@ -68,18 +82,12 @@ impl<'a> Client<'a> {
                      * To-Do:
                      * Think about this more
                      */
-                    match process_command(&server, &input) {
+                    match process_command(server, &input) {
                         Ok(resp) => resp,
-                        Err(err) => ClientResponse {
-                            code: ARC_ERR,
-                            message: err.to_string(),
-                        }
+                        Err(err) => ClientResponse::Err(err.to_string())
                     }
                 },  
-                Err(_) => ClientResponse {
-                            code: ARC_ERR,
-                            message: "invalid input".to_string(),
-                        }
+                Err(_) => ClientResponse::Err("invalid input".to_string())
             };
             self.write_response(c_resp);
         }
@@ -87,10 +95,7 @@ impl<'a> Client<'a> {
     }
 
     fn tear_down(mut self) -> () {
-        self.write_response(ClientResponse {
-            code: ARC_OK,
-            message: "disconnecting. bye!".to_string(),
-        });
+        self.write_response(ClientResponse::Ok("disconnecting. bye!".to_string()));
 
         let stream = self.stream_reader.into_inner();
         match stream.shutdown(Shutdown::Both) {
@@ -100,12 +105,11 @@ impl<'a> Client<'a> {
     }
 
     pub fn write_response(&mut self, response: ClientResponse) -> () {
-        println!("Sending (unformatted) response `{} {}`: cid|{}",
-                &response.code,
-                &response.message,
+        println!("Sending (unformatted) response `{:?}`: cid|{}",
+                response,
                 self.id
         );
-        let formatted_response = format!("{}", response);
+        let formatted_response = format!("{}{}", response, ARC_CRLF);
 
         // TODO: add exception handling
         self.stream_writer.write(formatted_response.as_bytes()).unwrap();
@@ -137,7 +141,7 @@ impl error::Error for ConfigError {
 pub struct ArcServer {
     pub config: Config,
     pub isloaded: bool,
-    pub db: Database,
+    pub db: RwLock<Database>,
 }
 
 impl ArcServer {
@@ -146,7 +150,7 @@ impl ArcServer {
             ArcServer {
                 config: config,
                 isloaded: false,
-                db: database,
+                db: RwLock::new(database),
             }
         )
     }
@@ -171,10 +175,10 @@ pub fn start_and_run() {
         for connection in tcp_server.incoming() {
             match connection {
                 Ok(stream) => {
-                    let arc_server_clone = Arc::clone(&arc_server);
+                    let mut arc_server_clone = Arc::clone(&arc_server);
                     thread::spawn(move|| {
                         match Client::new(&stream) {
-                            Ok(conn) => conn.handle_connection(arc_server_clone),
+                            Ok(conn) => conn.handle_connection(&mut arc_server_clone),
                             Err(err) => println!("Failed to set up connection: {}", err),
                         };
                     });

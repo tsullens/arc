@@ -3,11 +3,12 @@ use std::error;
 use std::sync::Arc;
 use std::collections::HashMap;
 use super::server::*;
+use super::database::*;
 
 pub struct Command {
     name: &'static str,
     arity: usize,
-    pub command_proc: fn(&Arc<ArcServer>, &Vec<&str>) -> ClientResponse,
+    pub command_proc: fn(&mut Arc<ArcServer>, &Vec<&str>) -> ClientResponse,
 }
 
 lazy_static! {
@@ -20,6 +21,10 @@ lazy_static! {
         let mut m = HashMap::new();
         m.insert("config", Command{name: "config", arity: 3, command_proc: config_command,});
         m.insert("ping", Command{name: "ping", arity: 1, command_proc: ping_command,});
+        m.insert("set", Command{name: "set", arity: 3, command_proc: set_command,});
+        m.insert("get", Command{name: "get", arity: 2, command_proc: get_command,});
+        m.insert("del", Command{name: "del", arity: 2, command_proc: del_command,});
+        m.insert("sadd", Command{name: "sadd", arity: 3, command_proc: sadd_command,});
         m
     };
 }
@@ -48,7 +53,7 @@ impl error::Error for CommandError {
  * To-Do: 
  * CommandError makes almost know sense here when I can return a ClientRepsonse with the message
  */
-pub fn process_command(server: &Arc<ArcServer>, input: &str) -> Result<ClientResponse, CommandError> {
+pub fn process_command(server: &mut Arc<ArcServer>, input: &str) -> Result<ClientResponse, CommandError> {
     let split_cmd: Vec<&str> = input.split_whitespace().collect();
     let key = split_cmd.get(0).unwrap_or_else(|| &"");
     
@@ -57,10 +62,10 @@ pub fn process_command(server: &Arc<ArcServer>, input: &str) -> Result<ClientRes
             if split_cmd.len() < command.arity {
                 return Err(CommandError(format!("not enough arguments for command {}",command.name)));
             }
-            let res = (command.command_proc)(&server, &split_cmd[1..].to_vec());
+            let res = (command.command_proc)(server, &split_cmd[1..].to_vec());
             Ok(res)
         },
-        None => Err(CommandError(format!("unknown command"))),
+        None => Err(CommandError("unknown command".to_string())),
     }
 }
 
@@ -79,38 +84,84 @@ pub fn process_command<'a>(server: &'a Arc<ArcServer>, input: Vec<&str>) -> Clie
     cresp
 }
 */
+
 // We disregard args here
-pub fn ping_command<'a>(_server: &'a Arc<ArcServer>, _args: &Vec<&str>) -> ClientResponse{
-    ClientResponse {
-        code: ARC_OK,
-        message: "pong".to_string(),
-    }
+pub fn ping_command(_server: &mut Arc<ArcServer>, _args: &Vec<&str>) -> ClientResponse {
+    ClientResponse::Ok("pong".to_string())
 }
 
-pub fn config_command<'a>(server: &'a Arc<ArcServer>, args: &Vec<&str>) -> ClientResponse {
+pub fn config_command(server: &mut Arc<ArcServer>, args: &Vec<&str>) -> ClientResponse {
     match args.get(0) {
         Some(&"get") => config_get_command(server, args[1]),
-        Some(arg) => ClientResponse {
-            code: ARC_ERR,
-            message: format!("unknown arg `{}`", arg),
-        },
-        None => ClientResponse {
-            code: ARC_ERR,
-            message: "CONFIG requires arg GET...".to_string(),
-        }
+        Some(arg) => ClientResponse::Err(format!("unknown arg `{}`", arg)),
+        None => ClientResponse::Err("CONFIG requires arg GET...".to_string()),
     }
 }
 
-fn config_get_command<'a>(server: &'a Arc<ArcServer>, key: &str) -> ClientResponse {;
+fn config_get_command(server: &mut Arc<ArcServer>, key: &str) -> ClientResponse {
     let resp = match server.config.get(key) {
-        Some(val) => ClientResponse {
-            code: ARC_OK,
-            message: val,
-        },
-        None => ClientResponse {
-            code: ARC_ERR,
-            message: "unknown config key".to_string(),
-        },
+        Some(val) => ClientResponse::Ok(val),
+        None => ClientResponse::Err("unknown config key".to_string()),
     };
     resp
+}
+
+/*
+ * Database Commands
+ */
+pub fn set_command(server: &mut Arc<ArcServer>, args: &Vec<&str>) -> ClientResponse {
+    let key = args[0];
+    let val = DatabaseVal::StringVal(StringValType::from(args[1]));
+    let mut db_handle = server.db.write().unwrap();
+    db_handle.insert(key.to_owned(), val);
+    return ClientResponse::Ok(String::new())
+}
+
+pub fn get_command(server: &mut Arc<ArcServer>, args: &Vec<&str>) -> ClientResponse {
+    let key = args[0];
+    let db_handle = server.db.read().unwrap();
+    
+    match db_handle.get(key) {
+        Some(val) => ClientResponse::Ok(val.to_string()),
+        None => ClientResponse::Err("key not found".to_string()),
+    }
+}
+
+/*
+ * get_command receives an Option from the database... 
+ * the same could be done here...
+ */
+pub fn del_command(server: &mut Arc<ArcServer>, args: &Vec<&str>) -> ClientResponse {
+    let key = args[0];
+    let mut db_handle = server.db.write().unwrap();
+    
+    match db_handle.delete(key) {
+        Ok(()) => ClientResponse::Ok(String::new()),
+        Err(err) => ClientResponse::Err(err.to_string()),
+    }
+
+
+}
+
+pub fn sadd_command(server: &mut Arc<ArcServer>, args: &Vec<&str>) -> ClientResponse {
+    let key =  args[0];
+    let val = DatabaseVal::SetVal(SetValType::from(&args[1..].to_vec()));
+    let mut db_handle = server.db.write().unwrap();
+
+    db_handle.insert(key.to_owned(), val);
+    return ClientResponse::Ok(String::new())
+}
+
+/*
+ * This is the exact same as the get_command...
+ * I've not even registered it as active
+ */ 
+pub fn sget_command(server: &mut Arc<ArcServer>, args: &Vec<&str>) -> ClientResponse {
+    let key = args[0];
+    let db_handle = server.db.read().unwrap();
+
+    match db_handle.get(key) {
+        Some(val) => ClientResponse::Ok(val.to_string()),
+        None => ClientResponse::Err("key not found".to_string()),
+    }
 }
