@@ -10,7 +10,7 @@ use super::config::*;
 use super::database::*;
 
 pub const ARC_CRLF: &'static str = "\r\n";
-pub const ARC_NL: &'static str = "\n";
+// pub const ARC_NL: &'static str = "\n";
 pub const ARC_OK: &'static str = "+OK";
 pub const ARC_ERR: &'static str = "-ERR";
 

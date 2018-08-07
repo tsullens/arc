@@ -18,22 +18,45 @@ Sending (unformatted) response `Err("key not found")`: cid|2128702929
 Trying 127.0.0.1...
 Connected to 127.0.0.1.
 Escape character is '^]'.
+ping
++OK
+pong
 get foo
 -ERR
 key not found
-set foo 1
+set foo bar
 +OK
 get foo
 +OK
-1
+bar
+set foo baz 
++OK
+get foo
++OK
+baz
 del foo
 +OK
 get foo
 -ERR
 key not found
-sadd bar hello hello world 1 world 2
+---------------------------------
+sadd foo hello world 1 world
 +OK
-get bar
+get foo
 +OK
- 1 world 2 hello
+ world 1 hello
+sadd foo 2
++OK
+get foo
++OK
+ world 2 1 hello
+sadd foo world 4 
++OK
+get foo
++OK
+ world 2 1 4 hello
+quit
++OK
+disconnecting. bye!
+Connection closed by foreign host.
 ```

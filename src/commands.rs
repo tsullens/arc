@@ -3,7 +3,6 @@ use std::error;
 use std::sync::Arc;
 use std::collections::HashMap;
 use super::server::*;
-use super::database::*;
 
 pub struct Command {
     name: &'static str,
@@ -111,9 +110,8 @@ fn config_get_command(server: &mut Arc<ArcServer>, key: &str) -> ClientResponse 
  */
 pub fn set_command(server: &mut Arc<ArcServer>, args: &Vec<&str>) -> ClientResponse {
     let key = args[0];
-    let val = DatabaseVal::StringVal(StringValType::from(args[1]));
     let mut db_handle = server.db.write().unwrap();
-    db_handle.insert(key.to_owned(), val);
+    db_handle.update_string(key, args[1]);
     return ClientResponse::Ok(String::new())
 }
 
@@ -145,23 +143,9 @@ pub fn del_command(server: &mut Arc<ArcServer>, args: &Vec<&str>) -> ClientRespo
 
 pub fn sadd_command(server: &mut Arc<ArcServer>, args: &Vec<&str>) -> ClientResponse {
     let key =  args[0];
-    let val = DatabaseVal::SetVal(SetValType::from(&args[1..].to_vec()));
+    let set = &args[1..].to_vec();
     let mut db_handle = server.db.write().unwrap();
 
-    db_handle.insert(key.to_owned(), val);
+    db_handle.update_or_insert_set(key, set);
     return ClientResponse::Ok(String::new())
-}
-
-/*
- * This is the exact same as the get_command...
- * I've not even registered it as active
- */ 
-pub fn sget_command(server: &mut Arc<ArcServer>, args: &Vec<&str>) -> ClientResponse {
-    let key = args[0];
-    let db_handle = server.db.read().unwrap();
-
-    match db_handle.get(key) {
-        Some(val) => ClientResponse::Ok(val.to_string()),
-        None => ClientResponse::Err("key not found".to_string()),
-    }
 }
