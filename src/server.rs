@@ -4,6 +4,7 @@ use std::thread;
 use std::error;
 use rand::prelude::*;
 use std::sync::{Arc, RwLock};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::fmt;
 use super::commands::*;
 use super::config::*;
@@ -140,8 +141,8 @@ impl error::Error for ConfigError {
 #[derive(Debug)]
 pub struct ArcServer {
     pub config: Config,
-    pub isloaded: bool,
     pub db: RwLock<Database>,
+    pub key_count: Arc<AtomicUsize>,
 }
 
 impl ArcServer {
@@ -149,10 +150,18 @@ impl ArcServer {
         Arc::new(
             ArcServer {
                 config: config,
-                isloaded: false,
                 db: RwLock::new(database),
+                key_count: Arc::new(AtomicUsize::new(0)),
             }
         )
+    }
+
+    pub fn inc_key_count(&self) -> () {
+        let _old_count = self.key_count.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn dec_key_count(&self) -> () {
+        let _old_count = self.key_count.fetch_sub(1, Ordering::Relaxed);
     }
 }
 

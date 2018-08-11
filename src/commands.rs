@@ -50,7 +50,7 @@ impl error::Error for CommandError {
 
 /*
  * To-Do: 
- * CommandError makes almost know sense here when I can return a ClientRepsonse with the message
+ * CommandError makes almost no sense here when I can return a ClientRepsonse with the message
  */
 pub fn process_command(server: &mut Arc<ArcServer>, input: &str) -> Result<ClientResponse, CommandError> {
     let split_cmd: Vec<&str> = input.split_whitespace().collect();
@@ -67,22 +67,6 @@ pub fn process_command(server: &mut Arc<ArcServer>, input: &str) -> Result<Clien
         None => Err(CommandError("unknown command".to_string())),
     }
 }
-
-/*
- * Dead code
-pub fn process_command<'a>(server: &'a Arc<ArcServer>, input: Vec<&str>) -> ClientResponse {
-
-    let cresp = match input[0] {
-        "ping" => ping_command(server, &input),
-        "config" => config_command(server, &input),
-        _ => ClientResponse {
-                code: ARC_ERR,
-                message: format!("unknown command `{}`", input[0]),
-            },
-    };
-    cresp
-}
-*/
 
 // We disregard args here
 pub fn ping_command(_server: &mut Arc<ArcServer>, _args: &Vec<&str>) -> ClientResponse {
@@ -134,11 +118,12 @@ pub fn del_command(server: &mut Arc<ArcServer>, args: &Vec<&str>) -> ClientRespo
     let mut db_handle = server.db.write().unwrap();
     
     match db_handle.delete(key) {
-        Ok(()) => ClientResponse::Ok(String::new()),
+        Ok(()) => {
+            server.dec_key_count();
+            ClientResponse::Ok(String::new())
+        },
         Err(err) => ClientResponse::Err(err.to_string()),
     }
-
-
 }
 
 pub fn sadd_command(server: &mut Arc<ArcServer>, args: &Vec<&str>) -> ClientResponse {
