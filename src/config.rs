@@ -16,10 +16,10 @@ pub struct Config {
 }
 
 impl Config {
-    
     pub fn init(conf_file: Option<&str>) -> Self {
         let file_name = conf_file.unwrap_or_else(|| DEFAULT_CONFIG_FILE);
-        let file = File::open(file_name).expect("Configuration file not found or cannot be opened.");
+        let file =
+            File::open(file_name).expect("Configuration file not found or cannot be opened.");
         let mut buf_reader = BufReader::new(file);
         let mut line = String::new();
 
@@ -37,9 +37,7 @@ impl Config {
                     continue;
                 }
                 line = line.to_lowercase();
-                let args: Vec<&str> = line.split_whitespace()
-                                            .take(2)
-                                            .collect();
+                let args: Vec<&str> = line.split_whitespace().take(2).collect();
                 // We expect 2 args
                 if args.len() != 2 {
                     println!("Bad configuration on line {}: {:?}", line_idx, args);
@@ -50,19 +48,19 @@ impl Config {
                     "bind_address" => config.bind_address = args[1].to_owned(),
                     "port" => config.port = args[1].to_owned(),
                     "cache_write_through" => {
-                        config.cache_write_through = args[1].parse::<u8>().unwrap();                    },
-                    _ => continue
+                        config.cache_write_through = args[1].parse::<u8>().unwrap();
+                    }
+                    _ => continue,
                 }
                 line_idx += 1;
             } else {
                 break;
             }
         }
-        return config
+        return config;
     }
 
     pub fn get(&self, key: &str) -> Option<String> {
-
         match &key.to_lowercase().as_str() {
             &"bind_address" => return Some(self.bind_address.clone()),
             &"port" => return Some(self.port.clone()),
@@ -71,5 +69,4 @@ impl Config {
             _ => None,
         }
     }
-
 }

@@ -1,8 +1,11 @@
 ### TODO
+
 - Add logging
+
 -----
 
-### running:
+### running
+
 ```bash
 [dev@terminus arc]$ cargo run --quiet
 Successfully listening on 127.0.0.1:7878
@@ -12,7 +15,8 @@ Sending (unformatted) response `Err("key not found")`: cid|2128702929
 ...
 ```
 
-### client operations:
+### client operations
+
 ```bash
 [dev@terminus arc]$ telnet 127.0.0.1 7878
 Trying 127.0.0.1...
@@ -29,7 +33,7 @@ set foo bar
 get foo
 +OK
 bar
-set foo baz 
+set foo baz
 +OK
 get foo
 +OK
